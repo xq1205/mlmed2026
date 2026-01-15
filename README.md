@@ -1,6 +1,8 @@
-USTH Machine Learning in Medicine 2026
-==================================
+# USTH Machine Learning in Medicine 2026
 
-* Your name here
-* Your ID here
-* Your team ID here
+* Nguyễn Xuân Quân
+* 23BI14370
+* Group 10
+
+
+
