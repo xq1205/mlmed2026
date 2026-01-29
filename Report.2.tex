@@ -1,0 +1,73 @@
+\documentclass[12pt]{article}
+
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{multicol}
+\usepackage{times}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{multicol}
+\raggedcolumns
+\usepackage{graphicx}
+
+
+\begin{document}
+
+
+\begin{center}
+{\LARGE\bfseries Measurement of Fetal head circumference using Ultrasound\par}
+\vspace{0.4cm}
+{\large Nguyen Xuan Quan -- Student ID: 23BI14370\par}
+\end{center}
+
+\vspace{1cm}
+
+
+\begin{multicols}{2}
+
+\section{Introduction}
+Fetal head circumference (HC) is a important measurement in prenatal care, used to monitor baby's growth and development. It is measured during an ultrasound examination. In this practice, i try to implement a deep learning- based regression model to estimate fetal head circumference from ultrasound images.
+
+\section{Data Description}
+In this practice, the HC18 dataset is used for head circumference estimation from ultrasound images. The dataset consists  of 4 files. The dataset consists of ultrasound images and accompanying CSV files that provide pixel size information and reference head circumference values for the training set. It includes separate folders for training and test images, with corresponding CSV files for pixel spacing. It is is worth noting that the training set also provides annotation images saved in PNG format.   
+
+\section{Methodology}
+In this project, we treat head circumference (HC) estimation as a regression task. We use a CNN to learn how to map ultrasound images to the geometric shape of the fetal head.Data PreparationWe resize all images to $224 \times 224$, convert them to grayscale, and normalize them to $[0, 1]$. In the training set, we use the provided masks to find the best-fitting ellipse using OpenCV's fitEllipse. This gives us the semi-major axis ($a$) and semi-minor axis ($b$) in pixels, which we use as the target labels for our model.Model ArchitectureWe use EfficientNetB0 as our main model. We add a $1 \times 1$ convolution layer at the beginning to handle the grayscale images. After the backbone, we use two Dense layers and a final output layer with 2 neurons to predict $a$ and $b$ at the same time. The model is trained using the Adam optimizer and Mean Absolute Error (MAE) loss.Calculation and EvaluationSince the model outputs axis lengths in pixels, we use Ramanujan’s formula to calculate the circumference:$$HC_{pixel} \approx \pi [3(a+b) - \sqrt{(3a+b)(a+3b)}]$$To get the final result in millimeters, we multiply $HC_{pixel}$ by the pixel size from the CSV file. Finally, we check the accuracy using MAE, RMSE, and $R^2$ metrics to see how close our predictions are to the ground truth.
+
+\section{Experimental Setup}
+
+We built the model using TensorFlow and split the dataset into 80\% for training and 20\% for validation. All images were processed as $224 \times 224$ grayscale. We trained the model using the Adam optimizer and MAE loss with a batch size of 32. To get the best results, we used two callbacks: EarlyStopping to stop early if the model stopped improving, and ReduceLROnPlateau to lower the learning rate when the loss got stuck. These helped the model converge faster and avoid overfitting. After training, we converted the predicted results from pixels to millimeters for the final evaluation.millimeters for the final evaluation.
+
+
+\section{Results}
+
+\includegraphics[width=\columnwidth]{output.png}
+
+\vspace{0.2cm}
+
+\noindent\textbf{Figure.} Training history, prediction versus ground truth, and error distribution of the proposed model.
+
+The training history shows a stable decrease in both training and validation loss, indicating good convergence of the model without severe overfitting. 
+The scatter plot of predicted versus ground-truth head circumference values demonstrates a strong linear correlation, with most samples lying close to the identity line. 
+Furthermore, the error distribution is centered around zero with a relatively limited spread, suggesting that the prediction errors are largely unbiased. 
+Overall, these results confirm that the proposed deep learning model can reliably estimate fetal head circumference from ultrasound images.
+
+Quantitatively, the performance of the proposed model is evaluated using standard regression metrics. 
+The model achieves a mean absolute error (MAE) of 9.34 mm and a root mean squared error (RMSE) of 14.28 mm. 
+In addition, the coefficient of determination reaches an R² value of 0.95, indicating a strong agreement between predicted and ground-truth head circumference values. 
+These numerical results are consistent with the visual observations from the regression plots and error distribution.
+
+
+
+\section{Comparison with Leaderboard}
+The results of this work are compared with those reported on the HC18 leaderboard. 
+Most methods on the leaderboard achieve mean absolute errors of a few millimeters up to around ten millimeters. 
+The proposed model obtains an MAE of about 9.3 mm, which is within this range. 
+This shows that the performance of the model is reasonable for a practice task.
+
+\section{Conclusion}
+In this practice, a deep learning model was used to estimate fetal head circumference from ultrasound images. 
+The model gave stable and reasonable results. 
+This shows that deep learning can be used for this task.
+\end{multicols}
+
+\end{document}
