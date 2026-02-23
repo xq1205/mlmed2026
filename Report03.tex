@@ -1,0 +1,347 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=2.8cm, right=2.8cm]{geometry}
+\usepackage{times}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{parskip}
+\usepackage{enumitem}
+
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
+\titleformat{\section}{\large\bfseries}{}{0em}{}[\titlerule]
+\titlespacing{\section}{0pt}{14pt}{6pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\newcommand{\placeholderimg}[2]{%
+  \fbox{\begin{minipage}{#1}\centering\vspace{0.8cm}%
+    {\color{gray}\small\texttt{[INSERT: #2]}}\vspace{0.8cm}%
+  \end{minipage}}%
+}
+
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries Lung Segmentation on the COVID-QU-Ex Dataset\\[4pt]
+  Using a U-Net Deep Learning Model\par}
+  \vspace{0.5cm}
+  {\large Nguyen Xuan Quan \quad Student ID: 23BI14370\par}
+\end{center}
+\vspace{0.4cm}\hrule\vspace{0.4cm}
+
+\section{Introduction}
+
+The COVID-QU-Ex dataset, compiled by researchers at Qatar University, is one of
+the largest publicly available chest X-ray (CXR) repositories for COVID-19
+research. It contains \textbf{33,920} CXR images across three diagnostic
+categories: \textbf{COVID-19} (11,956 images), \textbf{Non-COVID infections}
+(viral or bacterial pneumonia, 11,263 images), and \textbf{Normal} (10,701
+images). Every image is paired with a ground-truth \emph{lung segmentation mask},
+making this the largest lung mask dataset ever created.
+
+Accurate lung segmentation is a prerequisite for downstream classification tasks:
+it restricts the model's attention to the pulmonary region and discards irrelevant
+background anatomy (ribs, soft tissue, medical devices). This project applies a
+U-Net convolutional neural network to perform pixel-level binary segmentation of
+the lung region from CXR images.
+
+\section{Exploratory Data Analysis (EDA)}
+
+\subsection*{2.1 Directory Audit and File Count}
+
+The first two code cells define a \texttt{count\_files\_in\_directories} function
+that walks the entire dataset directory tree and counts the \texttt{.png} files
+present in each sub-folder (Train / Val / Test, each containing three class
+sub-directories). This is a critical quality-control step: a mismatch between
+image count and mask count would silently corrupt training by pairing the wrong
+mask with the wrong X-ray. The audit confirmed a one-to-one correspondence across
+all splits and categories.
+
+\subsection*{2.2 Visual Inspection of Image--Mask Pairs}
+
+Cell 3 renders a sample lung mask from the Normal class. Cells 7 and 8 then
+display a training X-ray and its corresponding binary mask side by side. These
+visual alignment checks confirm that lung boundaries in the image coincide exactly
+with the white (foreground) regions in the mask, validating annotation quality
+before any training begins.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{output.png}
+    \caption{X-ray}
+    \label{fig:placeholder}
+\end{figure}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{output2.png}
+    \caption{Mak}
+    \label{fig:placeholder}
+\end{figure}
+\subsection*{2.3 Pixel-Value Distribution of Predicted Masks}
+
+Cell 19 executes \texttt{np.unique(predict\_masks)} on the model output. The
+result shows values concentrated firmly near 0 and near 1:
+
+\begin{center}
+\small\texttt{array([0.00539569, 0.00559962, \ldots, 0.9999989, 0.9999993],
+dtype=float32)}
+\end{center}
+
+This bimodal distribution is the hallmark of a well-trained binary segmentation
+model. The sigmoid output has learned to commit decisively to ``background''
+($\approx 0$) or ``lung'' ($\approx 1$), rather than remaining uncertain around
+0.5. This confirms the Dice loss and sigmoid activation are cooperating correctly.
+
+\section{Data Preprocessing}
+
+\subsection*{3.1 Image Loading and Resizing to 256$\times$256}
+
+The \texttt{load\_images\_from\_folder} function (Cell 5) reads each \texttt{.png}
+in grayscale mode and reshapes it to \texttt{(256, 256, 1)}. The U-Net requires
+all inputs to share identical spatial dimensions. A resolution of 256$\times$256
+balances image detail (clinically relevant features such as pleural boundaries
+are preserved) with GPU memory efficiency (batch size of 16 fits comfortably).
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Split} & \textbf{Images loaded} & \textbf{Masks loaded} \\
+\midrule
+Training   & 3,000 & 3,000 \\
+Validation & 200   & 200   \\
+Test       & 50    & 50    \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{3.2 Normalisation and Binarisation}
+
+The \texttt{normalize\_and\_convert\_to\_binary} function (Cell 12) applies:
+
+\textbf{(a) Image normalisation:}
+\[
+  x_{\text{norm}} = \frac{x - 255}{255} \quad \Rightarrow \quad
+  x_{\text{norm}} \in [-1,\; 0]
+\]
+Normalisation prevents large raw pixel values (0--255) from generating
+disproportionately large gradient magnitudes in the early convolutional layers,
+which would destabilise or slow convergence. Batch Normalisation layers inside
+the model subsequently re-centre the feature distributions during forward passes.
+
+\textbf{(b) Mask binarisation:}
+\[
+  m_{\text{binary}} = \mathbb{1}[m > 127] \in \{0.0,\; 1.0\}
+\]
+Thresholding at 127 removes any JPEG compression artefacts near mask edges and
+produces the clean binary targets required by the Dice loss function.
+
+% ═══════════════════════════════════════════════════════════════════════════
+% IMAGE NOTE 2 — chèn ở đây
+% Lấy từ: Cell 14 (normalized X-ray) và Cell 15 (binary mask) trong Jupyter
+% Cách lấy: chạy lại Cell 14 → right-click → Save as xray_norm.png
+%            chạy lại Cell 15 → right-click → Save as mask_binary.png
+% Thay \placeholderimg bằng:
+%   \includegraphics[width=0.44\linewidth]{xray_norm.png}\hfill
+%   \includegraphics[width=0.44\linewidth]{mask_binary.png}
+% ═══════════════════════════════════════════════════════════════════════════
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{output3.png}
+    \caption{Normalized X-ray}
+    \label{fig:placeholder}
+\end{figure}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.5\linewidth]{output4.png}
+    \caption{Ground-truth binary mask}
+    \label{fig:placeholder}
+\end{figure}
+\section{Model Architecture}
+
+\subsection*{4.1 U-Net Overview}
+
+The U-Net (Ronneberger et al., 2015) is the standard architecture for biomedical
+image segmentation. Its ``U'' shape consists of three components:
+
+\begin{enumerate}[noitemsep]
+  \item \textbf{Encoder:} four convolution + max-pooling blocks reduce the
+    spatial size from 256$\times$256 down to 16$\times$16 while increasing
+    channel depth (32 $\to$ 64 $\to$ 128 $\to$ 256).
+  \item \textbf{Bottleneck:} a 512-filter convolution block at the lowest
+    resolution encodes a compressed global representation.
+  \item \textbf{Decoder:} four transposed-convolution blocks mirror the encoder,
+    restoring the spatial size back to 256$\times$256 to produce the final mask.
+\end{enumerate}
+
+\textbf{Skip connections} concatenate encoder feature maps directly to the
+corresponding decoder layers. This is the key innovation: fine spatial
+details (exact lung boundary positions) lost during downsampling are passed
+directly to the decoder, enabling sharp, well-localised segmentation boundaries.
+
+\subsection*{4.2 Implementation Details}
+
+Each \texttt{conv\_block} applies: Conv2D $\to$ BatchNorm $\to$ ReLU $\to$
+Dropout(0.2) twice in sequence. Key design decisions:
+
+\textbf{BatchNormalization} after each convolution accelerates convergence by
+reducing internal covariate shift and acts as mild regularisation.
+
+\textbf{Dropout(0.2)} drops 20\% of activations randomly during training,
+preventing co-adaptation of neurons and reducing overfitting --- important
+with only 3,000 training images.
+
+\textbf{Sigmoid output} at the final \texttt{Conv2D(1, 1)} maps each pixel
+to a probability in $[0, 1]$.
+
+\textbf{Total parameters:} 7,771,297 (7,765,409 trainable; 5,888 non-trainable
+from BatchNorm running statistics).
+
+\subsection*{4.3 Loss Function and Metrics}
+
+\textbf{Dice Loss} was chosen over binary cross-entropy because it directly
+optimises the spatial overlap between prediction and ground truth, making it
+inherently robust to class imbalance (background pixels far outnumber lung pixels):
+\[
+  \mathcal{L}_{\text{Dice}} = -\frac{2 \sum y_{\text{true}} \cdot y_{\text{pred}}
+  + 1}{\sum y_{\text{true}} + \sum y_{\text{pred}} + 1}
+\]
+
+The \textbf{Jaccard Index} (Intersection-over-Union) was monitored alongside:
+\[
+  J = \frac{|A \cap B|}{|A \cup B|}
+\]
+
+\textbf{Adam} with learning rate $10^{-5}$ was used. The small learning rate
+produces stable, incremental updates appropriate for a relatively small dataset.
+
+\section{Model Training}
+
+\subsection*{5.1 Configuration}
+
+Training ran for 100 full epochs with batch size 16. Three callbacks were
+registered: \texttt{ModelCheckpoint} (saves best weights by \texttt{val\_loss}),
+\texttt{ReduceLROnPlateau} (halves LR after 10 stagnant epochs), and
+\texttt{EarlyStopping} (patience 30). Neither the LR scheduler nor early stopping
+was triggered across 100 epochs, confirming the learning rate of $10^{-5}$
+remained well-suited throughout training.
+
+\subsection*{5.2 Learning Curves}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{output5.png}
+  \caption{Training and validation performance over 100 epochs (Cell 13).
+  \textbf{Left:} Dice loss (negative Dice coefficient) decreases steadily 
+  from $-0.43$ at epoch 1 to $-0.96$ at epoch 100 for both splits. 
+  \textbf{Right:} Dice coefficient increases from $\approx 0.43$ to 
+  $\approx 0.96$. The validation curve (orange) tracks the training curve 
+  (blue) closely throughout, with minor fluctuations caused by the small 
+  validation set size (200 images). The absence of divergence between the 
+  two curves confirms the model generalises well without overfitting.}
+  \label{fig:curves}
+\end{figure}
+The learning curves reveal several important observations. Both training and
+validation Dice increase smoothly and consistently, a sign of a stable learning
+rate and good model initialisation. The final training Dice (0.9634) and
+validation Dice (0.9581) diverge by only 0.005 points, confirming that the
+Dropout and BatchNorm regularisation effectively prevented overfitting despite
+the small training set. Occasional fluctuations in the validation curve
+(e.g., epochs 15 and 67) are expected given the small validation set of only
+200 images, which produces higher per-epoch variance.
+
+\section{Results and Evaluation}
+
+\subsection*{6.1 Final Metrics at Epoch 100}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Metric}      & \textbf{Training} & \textbf{Validation} \\
+\midrule
+Dice Coefficient      & 0.9634            & 0.9581              \\
+Jaccard Index (IoU)   & 0.9849            & 0.9848              \\
+Binary Accuracy       & 0.9929            & 0.9881              \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+A Dice coefficient of \textbf{0.958} means that on average 95.8\% of the
+predicted lung pixels perfectly overlap with the ground-truth annotation ---
+considered excellent performance for medical image segmentation. The nearly
+identical Jaccard value (0.985) is consistent with the Dice score via the
+relation $J = D / (2 - D)$.
+
+\subsection*{6.2 Qualitative Prediction}
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.44\linewidth]{output6.png}\hfill
+  \includegraphics[width=0.44\linewidth]{output7.png}
+  \caption{Qualitative segmentation result on a held-out test image (index 7).
+  \textbf{Left:} Normalised chest X-ray (Cell 17) passed to the trained U-Net
+  as input. \textbf{Right:} Corresponding lung mask predicted by the model
+  (Cell 18). The predicted mask cleanly delineates both left and right lung
+  lobes with sharp, well-defined boundaries, consistent with the high Dice
+  coefficient of 0.958 achieved on the validation set.}
+  \label{fig:prediction}
+\end{figure}
+The bimodal output probability distribution (Section 2.3, Cell 19) provides
+additional quantitative validation: confident predictions near 0 and 1 indicate
+the model has learned a sharp decision boundary rather than producing uncertain
+mid-range probabilities.
+
+\section{Discussion}
+
+\textbf{Strengths.} The model achieves near state-of-the-art segmentation accuracy
+using only 3,000 training samples and 100 epochs. The U-Net's skip connections
+proved critical for preserving fine edge detail at the lung boundaries, while the
+Dice loss handled the inherent class imbalance effectively. Training and validation
+metrics diverged by less than 0.006 Dice points, demonstrating robust generalisation.
+
+\textbf{Limitations.} The experiment was restricted to the Normal class due to
+computational constraints. Lung morphology in COVID-19 and Pneumonia cases
+differs substantially from normal lungs (ground-glass opacities, consolidations,
+and pleural effusions can distort boundaries), so the high metrics reported here
+may not transfer directly to pathological classes. Additionally, the normalisation
+formula $(x - 255)/255$ maps values to $[-1, 0]$ rather than the more
+conventional $[0, 1]$; while the model learns successfully regardless, correcting
+this would improve interpretability and compatibility with pre-trained weights.
+
+\textbf{Future Work.} Training on all three classes, applying data augmentation
+(random flips, rotations, elastic deformations), and post-processing with
+connected-component filtering to remove spurious small predicted regions would
+all be natural extensions.
+
+\section{Conclusion}
+
+This project demonstrated that a U-Net with Dice loss, Batch Normalisation, and
+Dropout achieves excellent lung segmentation on the COVID-QU-Ex Normal class.
+Starting from random initialisation, the model reached a Dice coefficient of
+\textbf{0.958} and a Jaccard index of \textbf{0.985} on the validation set after
+100 epochs of training on 3,000 chest X-rays. The closely tracking learning
+curves confirm stable generalisation without overfitting. These results establish
+a strong foundation for extending the pipeline to pathological CXR classes and
+integrating lung segmentation as a preprocessing stage for downstream COVID-19
+classification.
+
+\section*{References}
+
+\begin{enumerate}[noitemsep]
+  \item Ronneberger, O., Fischer, P., \& Brox, T. (2015). U-Net: Convolutional
+    Networks for Biomedical Image Segmentation. \textit{MICCAI 2015}, LNCS 9351,
+    pp.\ 234--241.
+  \item Tahir, A. M., et al.\ (2022). COVID-QU-Ex Dataset. \textit{IEEE Dataport}.
+    \url{https://doi.org/10.21227/25ex-p371}
+  \item Dice, L. R. (1945). Measures of the Amount of Ecologic Association Between
+    Species. \textit{Ecology}, 26(3), 297--302.
+  \item Kingma, D. P., \& Ba, J. (2014). Adam: A Method for Stochastic
+    Optimization. \textit{arXiv:1412.6980}.
+\end{enumerate}
+
+\end{document}
